@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>The Hessian Explorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,700&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one plate, like a textbook figure: title, two linked views side by side, the matrix underneath. */
+:root {
+  --paper: #f8f7f3;
+  --ink: #1d1c1a;
+  --muted: #7d7a72;
+  --rule: #dedbd2;
+  --wire: #cfc6b4;
+  --patch: #3b8a55;
+  --patch-fill: rgba(59, 138, 85, 0.30);
+  --up: #d9822b;      /* curves up, λ > 0 */
+  --down: #3a6fa8;    /* curves down, λ < 0 */
+  --flat: #8d8a82;
+  --dot: #1d1c1a;
+  --panel: #ffffff;
+  --font-display: "Source Serif 4", "DejaVu Serif", Georgia, serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "DejaVu Sans Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1b1a18; --ink: #ece9e1; --muted: #9c988e; --rule: #34322d;
+    --wire: #5c564b; --patch: #5fbf7f; --patch-fill: rgba(95, 191, 127, 0.28);
+    --up: #ee9a45; --down: #6aa0dc; --flat: #9c988e; --dot: #ece9e1; --panel: #22211e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #1b1a18; --ink: #ece9e1; --muted: #9c988e; --rule: #34322d;
+  --wire: #5c564b; --patch: #5fbf7f; --patch-fill: rgba(95, 191, 127, 0.28);
+  --up: #ee9a45; --down: #6aa0dc; --flat: #9c988e; --dot: #ece9e1; --panel: #22211e;
+  color-scheme: dark;
+}
+html, body { background: var(--paper); color: var(--ink); }
+body {
+  font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 40px;
+}
+.plate { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+header h1 {
+  font-family: var(--font-display); font-weight: 700; font-size: clamp(2rem, 5vw, 3.1rem);
+  line-height: 1.05; margin: 0; letter-spacing: -0.01em; text-wrap: balance;
+}
+header p { font-family: var(--font-display); font-size: 1.15rem; color: var(--muted); margin: 6px 0 0; }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 0; width: 100%; }
+
+.views { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 720px) { .views { grid-template-columns: 1fr; } }
+figure { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+canvas {
+  width: 100%; aspect-ratio: 3 / 2; max-width: 100%; display: block; touch-action: none;
+  border-radius: 4px; outline: none;
+}
+canvas:focus-visible { box-shadow: 0 0 0 2px var(--patch); }
+#map { cursor: crosshair; }
+#surf { cursor: grab; }
+#surf.dragging-view { cursor: grabbing; }
+#surf.over-patch, #surf.dragging-patch { cursor: move; }
+figcaption { font-size: 0.82rem; color: var(--muted); }
+
+.math { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; overflow-x: auto; }
+math { font-size: 1.35rem; }
+math.num mn { font-family: var(--font-mono); }
+.readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 32px; }
+.lams { font-family: var(--font-mono); font-size: 1rem; font-variant-numeric: tabular-nums; }
+.lams .pos { color: var(--up); } .lams .neg { color: var(--down); } .lams .zero { color: var(--flat); }
+#verdict { font-weight: 600; font-size: 1.05rem; color: var(--patch); letter-spacing: 0.01em; }
+.legend { font-size: 0.85rem; color: var(--muted); margin: 0; }
+.legend b.up { color: var(--up); font-weight: 600; } .legend b.down { color: var(--down); font-weight: 600; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; font-size: 0.88rem; }
+.controls label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.controls input[type="checkbox"], .controls input[type="range"] { accent-color: var(--patch); }
+.controls input[type="range"] { width: 150px; max-width: 40vw; }
+button {
+  font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 4px; padding: 4px 10px; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.note { font-size: 0.85rem; color: var(--muted); max-width: 70ch; margin: 0; }
+.note a { color: var(--patch); }
+</style>
+
+<main class="plate">
+  <header>
+    <h1>The Hessian</h1>
+    <p>The Jacobian of the gradient: how the slopes change as you move.</p>
+  </header>
+  <hr>
+
+  <section class="views">
+    <figure>
+      <canvas id="map" tabindex="0" aria-label="Contour map. Click or drag to move the point; arrow keys nudge it."></canvas>
+      <figcaption>Contour map. Click or drag anywhere to move the point.</figcaption>
+    </figure>
+    <figure>
+      <canvas id="surf" tabindex="0" aria-label="3D surface. Drag the green patch to move it; drag elsewhere to rotate."></canvas>
+      <figcaption>Drag the green patch over the surface. Drag empty space to turn the view.</figcaption>
+    </figure>
+  </section>
+
+  <div class="controls">
+    <label for="size">Patch size
+      <input type="range" id="size" min="0.1" max="1.2" step="0.01" value="0.5">
+      <span class="mono" id="sizeval">±0.50</span>
+    </label>
+    <label><input type="checkbox" id="quad"> Overlay the quadratic model f + ∇f·d + ½dᵀHd</label>
+    <label><input type="checkbox" id="spin"> Slowly turn the view</label>
+    <button id="reset" type="button">Reset view</button>
+    <span class="mono" id="pos"></span>
+  </div>
+  <hr>
+
+  <section class="math" aria-live="polite">
+    <math display="block">
+      <mrow>
+        <mi mathvariant="bold">H</mi><mo>=</mo>
+        <mi mathvariant="bold">J</mi><mo stretchy="false">(</mo><mo>∇</mo><mi>f</mi><mo stretchy="false">)</mo><mo>=</mo>
+        <mrow><mo>[</mo>
+          <mtable rowspacing="0.6em" columnspacing="1em">
+            <mtr>
+              <mtd><mfrac><mrow><msup><mo>∂</mo><mn>2</mn></msup><mi>f</mi></mrow><mrow><mo>∂</mo><msup><mi>x</mi><mn>2</mn></msup></mrow></mfrac></mtd>
+              <mtd><mfrac><mrow><msup><mo>∂</mo><mn>2</mn></msup><mi>f</mi></mrow><mrow><mo>∂</mo><mi>x</mi><mo>∂</mo><mi>y</mi></mrow></mfrac></mtd>
+            </mtr>
+            <mtr>
+              <mtd><mfrac><mrow><msup><mo>∂</mo><mn>2</mn></msup><mi>f</mi></mrow><mrow><mo>∂</mo><mi>y</mi><mo>∂</mo><mi>x</mi></mrow></mfrac></mtd>
+              <mtd><mfrac><mrow><msup><mo>∂</mo><mn>2</mn></msup><mi>f</mi></mrow><mrow><mo>∂</mo><msup><mi>y</mi><mn>2</mn></msup></mrow></mfrac></mtd>
+            </mtr>
+          </mtable>
+        <mo>]</mo></mrow>
+        <mo>=</mo>
+      </mrow>
+    </math>
+    <math display="block" class="num">
+      <mrow><mo>[</mo>
+        <mtable rowspacing="0.9em" columnspacing="1.4em">
+          <mtr><mtd><mn id="h00">0</mn></mtd><mtd><mn id="h01">0</mn></mtd></mtr>
+          <mtr><mtd><mn id="h10">0</mn></mtd><mtd><mn id="h11">0</mn></mtd></mtr>
+        </mtable>
+      <mo>]</mo></mrow>
+    </math>
+  </section>
+
+  <div class="readout">
+    <span class="lams">λ₁ = <span id="l1">0</span>,&nbsp; λ₂ = <span id="l2">0</span></span>
+    <span id="verdict">SADDLE</span>
+  </div>
+  <p class="legend">Arrows: eigenvectors of H. <b class="up">Orange</b>: curves up (λ &gt; 0). <b class="down">Blue</b>: curves down (λ &lt; 0). Arrow length grows with |λ|.</p>
+  <p class="note">The eigenvalue signs describe the local curvature anywhere on the surface. They classify a minimum, maximum or saddle point only where the slope is zero, at the tops of the two hills and at the pass between them. Current slope: <span class="mono" id="grad"></span></p>
+  <hr>
+  <p class="note">Interactive version of an animation by <a href="https://www.linkedin.com/in/rajjoub/">Basem Rajjoub</a>, from the <a href="https://www.linkedin.com/posts/rajjoub_math-optimization-fem-share-7519720158731571200-tjM1/">LinkedIn post on the Hessian</a>. The layout, colors and wording follow that original.</p>
+</main>
+
+<script>
+(() => {
+  // ---- the surface: two Gaussian hills -------------------------------------------------
+  const HILLS = [
+    { a: 1.0,  x: -1.1,  y: 0.0,  s: 0.8 },
+    { a: 0.75, x: 1.3,   y: 0.15, s: 0.6 },
+  ];
+  const XMIN = -3.2, XMAX = 3.2, YMIN = -2.2, YMAX = 2.2;
+  const ZS = 2.4;        // vertical exaggeration in the 3D view
+  let PATCH = 0.5;     // half-width of the green patch
+
+  function evalAll(x, y) {
+    let f = 0, gx = 0, gy = 0, hxx = 0, hxy = 0, hyy = 0;
+    for (const h of HILLS) {
+      const dx = x - h.x, dy = y - h.y, s2 = h.s * h.s, s4 = s2 * s2;
+      const g = h.a * Math.exp(-(dx * dx + dy * dy) / (2 * s2));
+      f += g;
+      gx += -g * dx / s2; gy += -g * dy / s2;
+      hxx += g * (dx * dx / s4 - 1 / s2);
+      hyy += g * (dy * dy / s4 - 1 / s2);
+      hxy += g * dx * dy / s4;
+    }
+    return { f, gx, gy, hxx, hxy, hyy };
+  }
+  const F = (x, y) => evalAll(x, y).f;
+
+  function eig(a, b, d) {
+    const m = (a + d) / 2, r = Math.hypot((a - d) / 2, b);
+    const vals = [m - r, m + r];
+    const vecs = vals.map(l => {
+      let vx, vy;
+      if (Math.abs(b) > 1e-9) { vx = b; vy = l - a; }
+      else if (Math.abs(a - l) < Math.abs(d - l)) { vx = 1; vy = 0; }
+      else { vx = 0; vy = 1; }
+      const n = Math.hypot(vx, vy); return [vx / n, vy / n];
+    });
+    return { vals, vecs };
+  }
+
+  // ---- state -----------------------------------------------------------------------------
+  const DEFAULT_VIEW = { yaw: 0.38, elev: 0.5 };
+  const state = { px: 0.45, py: -0.5, yaw: DEFAULT_VIEW.yaw, elev: DEFAULT_VIEW.elev, quad: false, spin: false };
+  const clampP = () => {
+    state.px = Math.min(XMAX - PATCH, Math.max(XMIN + PATCH, state.px));
+    state.py = Math.min(YMAX - PATCH, Math.max(YMIN + PATCH, state.py));
+  };
+
+  // ---- theme colors ----------------------------------------------------------------------
+  let C = {};
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ["paper", "ink", "muted", "rule", "wire", "patch", "patch-fill", "up", "down", "flat", "dot"])
+      C[k] = cs.getPropertyValue("--" + k).trim();
+  }
+  const lamColor = l => Math.abs(l) < 0.02 ? C.flat : (l > 0 ? C.up : C.down);
+
+  // ---- canvases --------------------------------------------------------------------------
+  const map = document.getElementById("map"), surf = document.getElementById("surf");
+  const mctx = map.getContext("2d"), sctx = surf.getContext("2d");
+  function fit(cv, ctx) {
+    const dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: r.width, h: r.height };
+  }
+  let MW = 0, MH = 0, SW = 0, SH = 0;
+
+  // ---- contour map -----------------------------------------------------------------------
+  const NX = 161, NY = 111, GRID = new Float32Array(NX * NY);
+  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++)
+    GRID[j * NX + i] = F(XMIN + (XMAX - XMIN) * i / (NX - 1), YMIN + (YMAX - YMIN) * j / (NY - 1));
+  const LEVELS = []; for (let v = 0.06; v < 1.0; v += 0.085) LEVELS.push(v);
+
+  let mapScale = 1, mapOX = 0, mapOY = 0;
+  function mapLayout() {
+    mapScale = Math.min(MW / (XMAX - XMIN), MH / (YMAX - YMIN)) * 0.94;
+    mapOX = MW / 2; mapOY = MH / 2;
+  }
+  const toMap = (x, y) => [mapOX + x * mapScale, mapOY - y * mapScale];
+  const fromMap = (u, v) => [(u - mapOX) / mapScale, -(v - mapOY) / mapScale];
+
+  let contourPath = null;
+  function buildContours() {
+    // marching squares into one Path2D (rebuilt only on resize)
+    const p = new Path2D();
+    const gx = i => XMIN + (XMAX - XMIN) * i / (NX - 1), gy = j => YMIN + (YMAX - YMIN) * j / (NY - 1);
+    for (const L of LEVELS) {
+      for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) {
+        const v0 = GRID[j * NX + i], v1 = GRID[j * NX + i + 1], v2 = GRID[(j + 1) * NX + i + 1], v3 = GRID[(j + 1) * NX + i];
+        const c = (v0 > L) | ((v1 > L) << 1) | ((v2 > L) << 2) | ((v3 > L) << 3);
+        if (c === 0 || c === 15) continue;
+        const x0 = gx(i), x1 = gx(i + 1), y0 = gy(j), y1 = gy(j + 1);
+        const e = [
+          [x0 + (x1 - x0) * (L - v0) / (v1 - v0), y0],
+          [x1, y0 + (y1 - y0) * (L - v1) / (v2 - v1)],
+          [x0 + (x1 - x0) * (L - v3) / (v2 - v3), y1],
+          [x0, y0 + (y1 - y0) * (L - v0) / (v3 - v0)],
+        ];
+        const segs = {1:[[3,0]],2:[[0,1]],3:[[3,1]],4:[[1,2]],5:[[3,0],[1,2]],6:[[0,2]],7:[[3,2]],
+                      8:[[2,3]],9:[[0,2]],10:[[0,1],[2,3]],11:[[1,2]],12:[[1,3]],13:[[0,1]],14:[[0,3]]}[c];
+        for (const [a, b] of segs) {
+          const [ua, va] = toMap(...e[a]), [ub, vb] = toMap(...e[b]);
+          p.moveTo(ua, va); p.lineTo(ub, vb);
+        }
+      }
+    }
+    contourPath = p;
+  }
+
+  function arrow(ctx, x0, y0, dx, dy, color, width) {
+    const x1 = x0 + dx, y1 = y0 + dy, L = Math.hypot(dx, dy);
+    if (L < 1) return;
+    const ux = dx / L, uy = dy / L, hl = Math.min(9, L * 0.55), hw = hl * 0.55;
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1 - ux * hl * 0.6, y1 - uy * hl * 0.6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - ux * hl - uy * hw, y1 - uy * hl + ux * hw);
+    ctx.lineTo(x1 - ux * hl + uy * hw, y1 - uy * hl - ux * hw);
+    ctx.closePath(); ctx.fill();
+  }
+  const arrowLen = l => 16 + 34 * Math.min(1.5, Math.abs(l));
+
+  function drawMap(H, E) {
+    mctx.clearRect(0, 0, MW, MH);
+    mctx.strokeStyle = C.wire; mctx.lineWidth = 1.1; mctx.stroke(contourPath);
+    // patch outline on the map
+    const [pu, pv] = toMap(state.px - PATCH, state.py + PATCH);
+    mctx.fillStyle = C["patch-fill"]; mctx.strokeStyle = C.patch; mctx.lineWidth = 1.2;
+    mctx.fillRect(pu, pv, 2 * PATCH * mapScale, 2 * PATCH * mapScale);
+    mctx.strokeRect(pu, pv, 2 * PATCH * mapScale, 2 * PATCH * mapScale);
+    const [cu, cv] = toMap(state.px, state.py);
+    for (let k = 0; k < 2; k++) {
+      const [vx, vy] = E.vecs[k], L = arrowLen(E.vals[k]), col = lamColor(E.vals[k]);
+      arrow(mctx, cu, cv, vx * L, -vy * L, col, 3);
+      arrow(mctx, cu, cv, -vx * L, vy * L, col, 3);
+    }
+    mctx.fillStyle = C.dot; mctx.beginPath(); mctx.arc(cu, cv, 5, 0, 2 * Math.PI); mctx.fill();
+  }
+
+  // ---- 3D surface ------------------------------------------------------------------------
+  let S3 = 1, CX = 0, CY = 0;
+  function surfLayout() {
+    const diag = Math.hypot(XMAX - XMIN, YMAX - YMIN);
+    S3 = Math.min(SW / (diag * 1.0), SH / (diag * 0.6));
+    CX = SW / 2; CY = SH * 0.64;
+  }
+  function proj(x, y, z) {
+    const cy = Math.cos(state.yaw), sy = Math.sin(state.yaw), ce = Math.cos(state.elev), se = Math.sin(state.elev);
+    const xr = x * cy - y * sy, yr = x * sy + y * cy, zz = z * ZS;
+    return [CX + S3 * xr, CY - S3 * (zz * ce + yr * se), yr * ce - zz * se];   // [u, v, depth]
+  }
+
+  const WX = 41, WY = 29;
+  const WIRE = [];
+  for (let j = 0; j < WY; j++) for (let i = 0; i < WX; i++) {
+    const x = XMIN + (XMAX - XMIN) * i / (WX - 1), y = YMIN + (YMAX - YMIN) * j / (WY - 1);
+    WIRE.push([x, y, F(x, y)]);
+  }
+  // dense samples used to find which surface point is under the cursor
+  const PX = 129, PY = 89, PICK = [];
+  for (let j = 0; j < PY; j++) for (let i = 0; i < PX; i++) {
+    const x = XMIN + (XMAX - XMIN) * i / (PX - 1);
+    const y = YMIN + (YMAX - YMIN) * j / (PY - 1);
+    PICK.push([x, y, F(x, y)]);
+  }
+
+  function drawSurf(H, E, d) {
+    sctx.clearRect(0, 0, SW, SH);
+    const P = WIRE.map(p => proj(p[0], p[1], p[2]));
+    sctx.strokeStyle = C.wire; sctx.lineWidth = 0.8; sctx.beginPath();
+    for (let j = 0; j < WY; j++) for (let i = 0; i < WX - 1; i++) {
+      const a = P[j * WX + i], b = P[j * WX + i + 1]; sctx.moveTo(a[0], a[1]); sctx.lineTo(b[0], b[1]);
+    }
+    for (let i = 0; i < WX; i++) for (let j = 0; j < WY - 1; j++) {
+      const a = P[j * WX + i], b = P[(j + 1) * WX + i]; sctx.moveTo(a[0], a[1]); sctx.lineTo(b[0], b[1]);
+    }
+    sctx.stroke();
+
+    // the green patch: filled quads, far to near
+    const N = 10, pts = [];
+    for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+      const x = state.px - PATCH + 2 * PATCH * i / N, y = state.py - PATCH + 2 * PATCH * j / N;
+      pts.push(proj(x, y, F(x, y) + 0.004));
+    }
+    const quads = [];
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const q = [pts[j * (N + 1) + i], pts[j * (N + 1) + i + 1], pts[(j + 1) * (N + 1) + i + 1], pts[(j + 1) * (N + 1) + i]];
+      quads.push({ q, z: (q[0][2] + q[1][2] + q[2][2] + q[3][2]) / 4 });
+    }
+    quads.sort((a, b) => b.z - a.z);
+    sctx.fillStyle = C["patch-fill"]; sctx.strokeStyle = C.patch; sctx.lineWidth = 0.9; sctx.lineJoin = "round";
+    for (const { q } of quads) {
+      sctx.beginPath(); sctx.moveTo(q[0][0], q[0][1]);
+      for (let k = 1; k < 4; k++) sctx.lineTo(q[k][0], q[k][1]);
+      sctx.closePath(); sctx.fill(); sctx.stroke();
+    }
+    sctx.lineWidth = 1.8; sctx.beginPath();
+    for (let k = 0; k <= N; k++) { const p = pts[k]; k ? sctx.lineTo(p[0], p[1]) : sctx.moveTo(p[0], p[1]); }
+    for (let k = 0; k <= N; k++) { const p = pts[k * (N + 1) + N]; sctx.lineTo(p[0], p[1]); }
+    for (let k = N; k >= 0; k--) { const p = pts[N * (N + 1) + k]; sctx.lineTo(p[0], p[1]); }
+    for (let k = N; k >= 0; k--) { const p = pts[k * (N + 1)]; sctx.lineTo(p[0], p[1]); }
+    sctx.stroke();
+
+    // optional: the quadratic model the Hessian predicts, over the same patch
+    if (state.quad) {
+      const q = (dx, dy) => d.f + d.gx * dx + d.gy * dy + 0.5 * (H[0] * dx * dx + 2 * H[1] * dx * dy + H[3] * dy * dy);
+      sctx.strokeStyle = C.ink; sctx.lineWidth = 1; sctx.setLineDash([3, 3]); sctx.beginPath();
+      const M = 6;
+      for (let j = 0; j <= M; j++) for (let i = 0; i <= 24; i++) {
+        const dx = -PATCH + 2 * PATCH * i / 24, dy = -PATCH + 2 * PATCH * j / M;
+        const p = proj(state.px + dx, state.py + dy, q(dx, dy)); i ? sctx.lineTo(p[0], p[1]) : sctx.moveTo(p[0], p[1]);
+      }
+      for (let i = 0; i <= M; i++) for (let j = 0; j <= 24; j++) {
+        const dx = -PATCH + 2 * PATCH * i / M, dy = -PATCH + 2 * PATCH * j / 24;
+        const p = proj(state.px + dx, state.py + dy, q(dx, dy)); j ? sctx.lineTo(p[0], p[1]) : sctx.moveTo(p[0], p[1]);
+      }
+      sctx.stroke(); sctx.setLineDash([]);
+    }
+
+    // principal-curvature curves through the point, along each eigenvector
+    for (let k = 0; k < 2; k++) {
+      const [vx, vy] = E.vecs[k];
+      sctx.strokeStyle = lamColor(E.vals[k]); sctx.lineWidth = 2.6; sctx.lineCap = "round"; sctx.beginPath();
+      for (let t = 0; t <= 30; t++) {
+        const s = -PATCH * 0.95 + 1.9 * PATCH * t / 30, x = state.px + s * vx, y = state.py + s * vy;
+        const p = proj(x, y, F(x, y) + 0.01); t ? sctx.lineTo(p[0], p[1]) : sctx.moveTo(p[0], p[1]);
+      }
+      sctx.stroke();
+    }
+    const c = proj(state.px, state.py, d.f + 0.01);
+    sctx.fillStyle = C.dot; sctx.beginPath(); sctx.arc(c[0], c[1], 4.5, 0, 2 * Math.PI); sctx.fill();
+  }
+
+  // ---- readout ---------------------------------------------------------------------------
+  const fmt = v => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2).replace("-", "−");
+  const $ = id => document.getElementById(id);
+  function verdict(l1, l2) {
+    const t = 0.02;
+    if (Math.abs(l1) < t || Math.abs(l2) < t) return "FLAT in one direction: the curvature test can't decide";
+    if (l1 > 0 && l2 > 0) return "BOWL: curves up in every direction";
+    if (l1 < 0 && l2 < 0) return "DOME: curves down in every direction";
+    return "SADDLE: up one way, down the other";
+  }
+  function setLam(el, v) {
+    el.textContent = fmt(v);
+    el.className = Math.abs(v) < 0.02 ? "zero" : (v > 0 ? "pos" : "neg");
+  }
+
+  function render() {
+    const d = evalAll(state.px, state.py);
+    const H = [d.hxx, d.hxy, d.hxy, d.hyy];
+    const E = eig(d.hxx, d.hxy, d.hyy);
+    drawMap(H, E); drawSurf(H, E, d);
+    $("h00").textContent = fmt(H[0]); $("h01").textContent = fmt(H[1]);
+    $("h10").textContent = fmt(H[2]); $("h11").textContent = fmt(H[3]);
+    setLam($("l1"), E.vals[0]); setLam($("l2"), E.vals[1]);
+    $("verdict").textContent = verdict(E.vals[0], E.vals[1]);
+    $("pos").textContent = `(x, y) = (${fmt(state.px)}, ${fmt(state.py)})`;
+    $("grad").textContent = `∇f = (${fmt(d.gx)}, ${fmt(d.gy)}), |∇f| = ${fmt(Math.hypot(d.gx, d.gy))}`;
+  }
+  let queued = false;
+  const request = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; render(); }); } };
+
+  // ---- interaction: contour map ----------------------------------------------------------
+  function mapMove(e) {
+    const r = map.getBoundingClientRect();
+    [state.px, state.py] = fromMap(e.clientX - r.left, e.clientY - r.top);
+    clampP(); request();
+  }
+  map.addEventListener("pointerdown", e => { map.setPointerCapture(e.pointerId); mapMove(e); });
+  map.addEventListener("pointermove", e => { if (map.hasPointerCapture(e.pointerId)) mapMove(e); });
+
+  // ---- interaction: 3D surface -----------------------------------------------------------
+  let mode = null, last = null;
+  function overPatch(u, v) {
+    // inside the projected outline of the patch?
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => {
+      const x = state.px + a * PATCH, y = state.py + b * PATCH; return proj(x, y, F(x, y));
+    });
+    let inside = false;
+    for (let i = 0, j = 3; i < 4; j = i++) {
+      const [xi, yi] = corners[i], [xj, yj] = corners[j];
+      if ((yi > v) !== (yj > v) && u < (xj - xi) * (v - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    const c = proj(state.px, state.py, F(state.px, state.py));
+    return inside || Math.hypot(c[0] - u, c[1] - v) < 22;
+  }
+  function pickSurface(u, v) {
+    // nearest sampled surface point on screen; ties go to the one nearer the viewer and the current spot
+    let best = null, bestD = Infinity;
+    for (const p of PICK) {
+      const q = proj(p[0], p[1], p[2]);
+      const dd = (q[0] - u) ** 2 + (q[1] - v) ** 2 + 4 * q[2] * S3 * 0.02
+               + 6 * ((p[0] - state.px) ** 2 + (p[1] - state.py) ** 2) * S3 * 0.02;
+      if (dd < bestD) { bestD = dd; best = p; }
+    }
+    return best;
+  }
+  const local = e => { const r = surf.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  surf.addEventListener("pointerdown", e => {
+    const [u, v] = local(e);
+    surf.setPointerCapture(e.pointerId);
+    mode = overPatch(u, v) ? "patch" : "view"; last = [u, v];
+    surf.classList.add(mode === "patch" ? "dragging-patch" : "dragging-view");
+    if (mode === "view") { state.spin = false; $("spin").checked = false; }
+  });
+  surf.addEventListener("pointermove", e => {
+    const [u, v] = local(e);
+    if (!mode) { surf.classList.toggle("over-patch", overPatch(u, v)); return; }
+    if (mode === "patch") {
+      const p = pickSurface(u, v); state.px = p[0]; state.py = p[1]; clampP();
+    } else {
+      state.yaw += (u - last[0]) * 0.008;
+      state.elev = Math.min(1.45, Math.max(0.08, state.elev + (v - last[1]) * 0.006));
+    }
+    last = [u, v]; request();
+  });
+  const end = () => { mode = null; surf.classList.remove("dragging-patch", "dragging-view"); };
+  surf.addEventListener("pointerup", end); surf.addEventListener("pointercancel", end);
+
+  // keyboard: arrows nudge the point (on either canvas)
+  for (const cv of [map, surf]) cv.addEventListener("keydown", e => {
+    const k = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+    if (!k) return;
+    e.preventDefault(); const step = e.shiftKey ? 0.2 : 0.05;
+    state.px += k[0] * step; state.py += k[1] * step; clampP(); request();
+  });
+
+  // ---- controls --------------------------------------------------------------------------
+  $("quad").addEventListener("change", e => { state.quad = e.target.checked; request(); });
+  $("size").addEventListener("input", e => {
+    PATCH = +e.target.value; $("sizeval").textContent = "±" + PATCH.toFixed(2);
+    clampP(); request();
+  });
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  $("spin").addEventListener("change", e => { state.spin = e.target.checked; if (state.spin) tick(); });
+  $("reset").addEventListener("click", () => { state.yaw = DEFAULT_VIEW.yaw; state.elev = DEFAULT_VIEW.elev; request(); });
+  function tick() {
+    if (!state.spin) return;
+    state.yaw += reduce ? 0.002 : 0.005; render(); requestAnimationFrame(tick);
+  }
+
+  // ---- sizing and theme ------------------------------------------------------------------
+  function resize() {
+    ({ w: MW, h: MH } = fit(map, mctx)); ({ w: SW, h: SH } = fit(surf, sctx));
+    mapLayout(); surfLayout(); buildContours(); render();
+  }
+  readColors();
+  new ResizeObserver(resize).observe(map);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); request(); });
+  new MutationObserver(() => { readColors(); request(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  resize();
+})();
+</script>
+
+</body>
+</html>
