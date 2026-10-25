@@ -2,7 +2,7 @@
 
 An interactive explorer for the Hessian matrix, H = J(∇f). Drag a patch over a surface and watch the Hessian, its eigenvalues, the eigenvector arrows, and the bowl / dome / saddle label update live.
 
-**Live demo:** `<add your GitHub Pages or website URL here>`
+**Live demo:** https://aryana-haghjoo.github.io/hessian/
 
 ## Credit
 
