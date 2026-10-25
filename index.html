@@ -80,6 +80,10 @@ math.num mn { font-family: var(--font-mono); }
 .lams { font-family: var(--font-mono); font-size: 1rem; font-variant-numeric: tabular-nums; }
 .lams .pos { color: var(--up); } .lams .neg { color: var(--down); } .lams .zero { color: var(--flat); }
 #verdict { font-weight: 600; font-size: 1.05rem; color: var(--patch); letter-spacing: 0.01em; }
+#verdict[data-shape="bowl"] { color: var(--up); }
+#verdict[data-shape="dome"] { color: var(--down); }
+#verdict[data-shape="saddle"] { color: var(--patch); }
+#verdict[data-shape="flat"] { color: var(--flat); }
 .legend { font-size: 0.85rem; color: var(--muted); margin: 0; }
 .legend b.up { color: var(--up); font-weight: 600; } .legend b.down { color: var(--down); font-weight: 600; }
 
@@ -424,7 +428,9 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
     $("h00").textContent = fmt(H[0]); $("h01").textContent = fmt(H[1]);
     $("h10").textContent = fmt(H[2]); $("h11").textContent = fmt(H[3]);
     setLam($("l1"), E.vals[0]); setLam($("l2"), E.vals[1]);
-    $("verdict").textContent = verdict(E.vals[0], E.vals[1]);
+    const v = verdict(E.vals[0], E.vals[1]);
+    $("verdict").textContent = v;
+    $("verdict").dataset.shape = v.split(/[ :]/)[0].toLowerCase();
     $("pos").textContent = `(x, y) = (${fmt(state.px)}, ${fmt(state.py)})`;
     $("grad").textContent = `∇f = (${fmt(d.gx)}, ${fmt(d.gy)}), |∇f| = ${fmt(Math.hypot(d.gx, d.gy))}`;
   }
