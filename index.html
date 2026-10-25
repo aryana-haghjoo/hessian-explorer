@@ -91,12 +91,12 @@ math.num mn { font-family: var(--font-mono); }
 .controls label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
 .controls input[type="checkbox"], .controls input[type="range"] { accent-color: var(--patch); }
 .controls input[type="range"] { width: 150px; max-width: 40vw; }
-button {
+button, select {
   font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--panel);
   border: 1px solid var(--rule); border-radius: 4px; padding: 4px 10px; cursor: pointer;
 }
-button:hover { border-color: var(--muted); }
-button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
+button:hover, select:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .note { font-size: 0.85rem; color: var(--muted); max-width: 70ch; margin: 0; }
 .note a { color: var(--patch); }
@@ -112,7 +112,7 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
   <section class="views">
     <figure>
       <canvas id="map" tabindex="0" aria-label="Contour map. Click or drag to move the point; arrow keys nudge it."></canvas>
-      <figcaption>Contour map. Click or drag anywhere to move the point.</figcaption>
+      <figcaption>Contour map. Click or drag anywhere to move the point. Dashed contours are below ground level.</figcaption>
     </figure>
     <figure>
       <canvas id="surf" tabindex="0" aria-label="3D surface. Drag the green patch to move it; drag elsewhere to rotate."></canvas>
@@ -121,6 +121,15 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
   </section>
 
   <div class="controls">
+    <label for="surface">Surface
+      <select id="surface">
+        <option value="two">Two hills (original)</option>
+        <option value="range">Mountain range</option>
+        <option value="pits">Hills and pits</option>
+        <option value="random">Random landscape</option>
+      </select>
+    </label>
+    <button id="shuffle" type="button">Shuffle</button>
     <label for="size">Patch size
       <input type="range" id="size" min="0.1" max="1.2" step="0.01" value="0.5">
       <span class="mono" id="sizeval">±0.50</span>
@@ -167,20 +176,46 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
     <span id="verdict">SADDLE</span>
   </div>
   <p class="legend">Arrows: eigenvectors of H. <b class="up">Orange</b>: curves up (λ &gt; 0). <b class="down">Blue</b>: curves down (λ &lt; 0). Arrow length grows with |λ|.</p>
-  <p class="note">The eigenvalue signs describe the local curvature anywhere on the surface. They classify a minimum, maximum or saddle point only where the slope is zero, at the tops of the two hills and at the pass between them. Current slope: <span class="mono" id="grad"></span></p>
+  <p class="note">The eigenvalue signs describe the local curvature anywhere on the surface. They classify a minimum, maximum or saddle point only where the slope is zero: at hilltops, at the bottoms of pits, and at the passes between them. Current slope: <span class="mono" id="grad"></span></p>
   <hr>
   <p class="note">Interactive version of an animation by <a href="https://www.linkedin.com/in/rajjoub/">Basem Rajjoub</a>, from the <a href="https://www.linkedin.com/posts/rajjoub_math-optimization-fem-share-7519720158731571200-tjM1/">LinkedIn post on the Hessian</a>. The layout, colors and wording follow that original.</p>
 </main>
 
 <script>
 (() => {
-  // ---- the surface: two Gaussian hills -------------------------------------------------
-  const HILLS = [
-    { a: 1.0,  x: -1.1,  y: 0.0,  s: 0.8 },
-    { a: 0.75, x: 1.3,   y: 0.15, s: 0.6 },
-  ];
+  // ---- the surface: a sum of Gaussian bumps (a < 0 makes a pit) ------------------------
+  const SURFACES = {
+    two: { start: [0.45, -0.5], hills: [
+      { a: 1.0,  x: -1.1, y: 0.0,  s: 0.8 },
+      { a: 0.75, x: 1.3,  y: 0.15, s: 0.6 },
+    ] },
+    range: { start: [-0.4, 0.15], hills: [
+      { a: 0.8,  x: -2.2, y: 0.6,  s: 0.55 },
+      { a: 1.0,  x: -1.0, y: -0.4, s: 0.6 },
+      { a: 0.85, x: 0.2,  y: 0.7,  s: 0.55 },
+      { a: 0.7,  x: 1.3,  y: -0.3, s: 0.5 },
+      { a: 0.9,  x: 2.3,  y: 0.5,  s: 0.6 },
+    ] },
+    pits: { start: [0.0, -0.6], hills: [
+      { a: 1.0,  x: -1.6, y: 0.7,  s: 0.7 },
+      { a: 0.9,  x: 1.5,  y: -0.6, s: 0.65 },
+      { a: -0.8, x: -1.3, y: -1.0, s: 0.6 },
+      { a: -0.7, x: 1.4,  y: 0.9,  s: 0.6 },
+      { a: 0.5,  x: 0.1,  y: 0.0,  s: 0.45 },
+    ] },
+  };
+  function randomHills() {
+    const n = 4 + Math.floor(Math.random() * 4), out = [];
+    for (let k = 0; k < n; k++) {
+      const sign = Math.random() < 0.7 ? 1 : -1;
+      out.push({ a: sign * (0.4 + 0.6 * Math.random()), x: -2.6 + 5.2 * Math.random(),
+                 y: -1.6 + 3.2 * Math.random(), s: 0.4 + 0.4 * Math.random() });
+    }
+    return out;
+  }
+  let HILLS = SURFACES.two.hills;
   const XMIN = -3.2, XMAX = 3.2, YMIN = -2.2, YMAX = 2.2;
-  const ZS = 2.4;        // vertical exaggeration in the 3D view
+  let ZS = 2.4, ZBASE = 0;   // vertical exaggeration and floor height in the 3D view
   let PATCH = 0.5;     // half-width of the green patch
 
   function evalAll(x, y) {
@@ -241,9 +276,7 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
 
   // ---- contour map -----------------------------------------------------------------------
   const NX = 161, NY = 111, GRID = new Float32Array(NX * NY);
-  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++)
-    GRID[j * NX + i] = F(XMIN + (XMAX - XMIN) * i / (NX - 1), YMIN + (YMAX - YMIN) * j / (NY - 1));
-  const LEVELS = []; for (let v = 0.06; v < 1.0; v += 0.085) LEVELS.push(v);
+  let LEVELS = [];
 
   let mapScale = 1, mapOX = 0, mapOY = 0;
   function mapLayout() {
@@ -253,12 +286,13 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
   const toMap = (x, y) => [mapOX + x * mapScale, mapOY - y * mapScale];
   const fromMap = (u, v) => [(u - mapOX) / mapScale, -(v - mapOY) / mapScale];
 
-  let contourPath = null;
+  let contourPath = null, contourNeg = null;
   function buildContours() {
     // marching squares into one Path2D (rebuilt only on resize)
-    const p = new Path2D();
+    const pos = new Path2D(), neg = new Path2D();
     const gx = i => XMIN + (XMAX - XMIN) * i / (NX - 1), gy = j => YMIN + (YMAX - YMIN) * j / (NY - 1);
     for (const L of LEVELS) {
+      const p = L < 0 ? neg : pos;
       for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) {
         const v0 = GRID[j * NX + i], v1 = GRID[j * NX + i + 1], v2 = GRID[(j + 1) * NX + i + 1], v3 = GRID[(j + 1) * NX + i];
         const c = (v0 > L) | ((v1 > L) << 1) | ((v2 > L) << 2) | ((v3 > L) << 3);
@@ -278,7 +312,7 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
         }
       }
     }
-    contourPath = p;
+    contourPath = pos; contourNeg = neg;
   }
 
   function arrow(ctx, x0, y0, dx, dy, color, width) {
@@ -297,6 +331,7 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
   function drawMap(H, E) {
     mctx.clearRect(0, 0, MW, MH);
     mctx.strokeStyle = C.wire; mctx.lineWidth = 1.1; mctx.stroke(contourPath);
+    mctx.setLineDash([7, 5]); mctx.stroke(contourNeg); mctx.setLineDash([]);
     // patch outline on the map
     const [pu, pv] = toMap(state.px - PATCH, state.py + PATCH);
     mctx.fillStyle = C["patch-fill"]; mctx.strokeStyle = C.patch; mctx.lineWidth = 1.2;
@@ -320,23 +355,38 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
   }
   function proj(x, y, z) {
     const cy = Math.cos(state.yaw), sy = Math.sin(state.yaw), ce = Math.cos(state.elev), se = Math.sin(state.elev);
-    const xr = x * cy - y * sy, yr = x * sy + y * cy, zz = z * ZS;
+    const xr = x * cy - y * sy, yr = x * sy + y * cy, zz = (z - ZBASE) * ZS;
     return [CX + S3 * xr, CY - S3 * (zz * ce + yr * se), yr * ce - zz * se];   // [u, v, depth]
   }
 
-  const WX = 41, WY = 29;
-  const WIRE = [];
-  for (let j = 0; j < WY; j++) for (let i = 0; i < WX; i++) {
-    const x = XMIN + (XMAX - XMIN) * i / (WX - 1), y = YMIN + (YMAX - YMIN) * j / (WY - 1);
-    WIRE.push([x, y, F(x, y)]);
+  const WX = 41, WY = 29, PX = 129, PY = 89;
+  let WIRE = [], PICK = [];   // PICK: dense samples used to find which surface point is under the cursor
+
+  // recompute everything that depends on the surface
+  function rebuildSurface() {
+    let fmin = Infinity, fmax = -Infinity;
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+      const v = F(XMIN + (XMAX - XMIN) * i / (NX - 1), YMIN + (YMAX - YMIN) * j / (NY - 1));
+      GRID[j * NX + i] = v; fmin = Math.min(fmin, v); fmax = Math.max(fmax, v);
+    }
+    const range = fmax - fmin;
+    LEVELS = [];
+    for (let k = 0; k < 12; k++) {
+      const L = fmin + (k + 0.5) * range / 12;
+      if (Math.abs(L) > 0.03 * range) LEVELS.push(L);   // skip the flat ground level
+    }
+    ZS = 2.4 / Math.max(1, range); ZBASE = Math.min(0, fmin);
+    WIRE = []; PICK = [];
+    for (let j = 0; j < WY; j++) for (let i = 0; i < WX; i++) {
+      const x = XMIN + (XMAX - XMIN) * i / (WX - 1), y = YMIN + (YMAX - YMIN) * j / (WY - 1);
+      WIRE.push([x, y, F(x, y)]);
+    }
+    for (let j = 0; j < PY; j++) for (let i = 0; i < PX; i++) {
+      const x = XMIN + (XMAX - XMIN) * i / (PX - 1), y = YMIN + (YMAX - YMIN) * j / (PY - 1);
+      PICK.push([x, y, F(x, y)]);
+    }
   }
-  // dense samples used to find which surface point is under the cursor
-  const PX = 129, PY = 89, PICK = [];
-  for (let j = 0; j < PY; j++) for (let i = 0; i < PX; i++) {
-    const x = XMIN + (XMAX - XMIN) * i / (PX - 1);
-    const y = YMIN + (YMAX - YMIN) * j / (PY - 1);
-    PICK.push([x, y, F(x, y)]);
-  }
+  rebuildSurface();
 
   function drawSurf(H, E, d) {
     sctx.clearRect(0, 0, SW, SH);
@@ -511,6 +561,13 @@ button:focus-visible { outline: 2px solid var(--patch); outline-offset: 1px; }
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   $("spin").addEventListener("change", e => { state.spin = e.target.checked; if (state.spin) tick(); });
   $("reset").addEventListener("click", () => { state.yaw = DEFAULT_VIEW.yaw; state.elev = DEFAULT_VIEW.elev; request(); });
+  function setSurface(name) {
+    if (name === "random") HILLS = randomHills();
+    else { HILLS = SURFACES[name].hills; [state.px, state.py] = SURFACES[name].start; }
+    clampP(); rebuildSurface(); buildContours(); request();
+  }
+  $("surface").addEventListener("change", e => setSurface(e.target.value));
+  $("shuffle").addEventListener("click", () => { $("surface").value = "random"; setSurface("random"); });
   function tick() {
     if (!state.spin) return;
     state.yaw += reduce ? 0.002 : 0.005; render(); requestAnimationFrame(tick);

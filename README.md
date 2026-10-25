@@ -18,10 +18,11 @@ The layout, colors and wording (orange for curving up and blue for curving down,
 
 - **Drag the green patch** over the 3D surface, or click and drag on the contour map. Arrow keys nudge the point (hold Shift for bigger steps).
 - **Turn the 3D view** by dragging empty space.
+- **Pick a surface**: the original two hills, a mountain range, hills and pits, or a random landscape (**Shuffle** makes a new one). Contours below ground level are dashed.
 - **Change the patch size** with the slider.
 - **Overlay the quadratic model** f + ∇f·d + ½dᵀHd, to see where the second-order approximation stops matching the real surface.
 
-The surface is a sum of two Gaussian hills, so the Hessian is computed analytically, not by finite differences.
+Every surface is a sum of Gaussian bumps (a negative bump is a pit), so the Hessian is computed analytically, not by finite differences.
 
 ## Files
 
